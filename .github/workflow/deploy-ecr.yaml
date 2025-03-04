@@ -1,0 +1,51 @@
+name: Build and Push to Amazon ECR
+
+on:
+  push:
+    branches:
+      - main  # Aciona o workflow quando há push na branch 'main'
+
+env:
+  AWS_REGION: us-east-1  # Altere conforme sua região
+  ECR_REPOSITORY: meu-app-windows
+  IMAGE_TAG: latest
+
+jobs:
+  build-and-push:
+    runs-on: windows-latest  # Necessário para containers Windows
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Configurar credenciais da AWS
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login no Amazon ECR
+        run: |
+          $accountId = (aws sts get-caller-identity --query Account --output text)
+          $ecrUrl = "$accountId.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin $ecrUrl
+        shell: pwsh
+
+      - name: Criar repositório no ECR (se não existir)
+        run: |
+          aws ecr describe-repositories --repository-names ${{ env.ECR_REPOSITORY }} || aws ecr create-repository --repository-name ${{ env.ECR_REPOSITORY }}
+        shell: pwsh
+
+      - name: Construir a imagem Docker
+        run: |
+          $accountId = (aws sts get-caller-identity --query Account --output text)
+          $ecrUrl = "$accountId.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+          docker build -t $ecrUrl/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} .
+        shell: pwsh
+
+      - name: Enviar imagem para o Amazon ECR
+        run: |
+          $accountId = (aws sts get-caller-identity --query Account --output text)
+          $ecrUrl = "$accountId.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+          docker push $ecrUrl/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+        shell: pwsh
